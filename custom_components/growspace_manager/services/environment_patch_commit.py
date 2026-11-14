@@ -25,6 +25,7 @@ from ..domain.flow_meter import (
     classify_flow_meter,
     validate_meter_placements,
 )
+from ..domain.supplemental_lights import find_duplicate_lighting_assignments
 from ..domain.zone_edit import resolve_zone, validate_zones
 from ..exhaust_migration import evaluate_exhaust_migration_issues
 
@@ -90,6 +91,31 @@ async def async_commit_environment_patch(
                 classify_flow_meter(meter.entity_id, state.attributes if state else {})
     except FlowMeterError as err:
         raise EnvironmentPatchError(str(err)) from err
+
+    if (
+        "growlight_entities" in patch.values
+        or "growlight_ac_infinity_devices" in patch.values
+    ):
+        main_candidates = [
+            *verdict.config.growlight_entities,
+            *(d.mode_entity for d in verdict.config.growlight_ac_infinity_devices),
+        ]
+        if dupes := find_duplicate_lighting_assignments(
+            coordinator.growspaces,
+            growspace.id,
+            main_candidates,
+            candidate_role="main grow light",
+        ):
+            raise EnvironmentPatchError(dupes[0])
+    if "supplemental_lights" in patch.values:
+        supp_candidates = [s.entity_id for s in verdict.config.supplemental_lights]
+        if dupes := find_duplicate_lighting_assignments(
+            coordinator.growspaces,
+            growspace.id,
+            supp_candidates,
+            candidate_role="supplemental light",
+        ):
+            raise EnvironmentPatchError(dupes[0])
 
     previous_config = growspace.environment_config
     previous_probes = {

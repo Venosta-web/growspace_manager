@@ -158,6 +158,8 @@
       'soil_moisture_max': None,
       'soil_moisture_min': None,
       'stress_threshold': 0.7,
+      'supplemental_lights': list([
+      ]),
       'temperature_sensor': None,
       'temperature_sensors': list([
       ]),

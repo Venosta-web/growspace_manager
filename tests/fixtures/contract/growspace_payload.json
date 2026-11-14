@@ -276,6 +276,8 @@
     "stress_threshold": 0.65,
     "substrate_ec_delta": 0.4,
     "substrate_temperature_sensors": ["sensor.contract_substrate_temperature"],
+    "supplemental_light_statuses": [],
+    "supplemental_lights": [],
     "temperature": "25.4",
     "temperature_sensor": "sensor.contract_temperature",
     "temperature_sensors": [
@@ -1604,6 +1606,7 @@
         "substrate_temperature_sensors": [
           "sensor.subarea_substrate_temperature"
         ],
+        "supplemental_lights": [],
         "temperature_sensor": "sensor.subarea_temperature",
         "temperature_sensors": [
           "sensor.subarea_temperature",

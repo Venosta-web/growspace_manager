@@ -85,6 +85,7 @@ def managed_outputs(growspace: Growspace) -> tuple[str, ...]:
         *env.humidifier_entities,
         *env.dehumidifier_entities,
         *env.growlight_entities,
+        *(s.entity_id for s in env.supplemental_lights if s.entity_id),
     )
     modes = (
         *(d.mode_entity for d in env.exhaust_fan_ac_infinity_devices),

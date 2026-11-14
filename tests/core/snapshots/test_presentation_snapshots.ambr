@@ -140,6 +140,10 @@
       'stress_threshold': 0.7,
       'substrate_temperature_sensors': list([
       ]),
+      'supplemental_light_statuses': list([
+      ]),
+      'supplemental_lights': list([
+      ]),
       'temperature': None,
       'temperature_sensor': 'sensor.temp',
       'temperature_sensors': list([

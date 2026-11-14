@@ -18,12 +18,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import timedelta
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.const import STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.helpers.event import (
     async_track_point_in_utc_time,
+    async_track_state_change_event,
     async_track_time_interval,
 )
 from homeassistant.util import dt as dt_util
@@ -50,6 +52,10 @@ from .domain.light_schedule import (
     resolve_photoperiod_hours,
 )
 from .domain.manual_override import Subsystem
+from .domain.supplemental_lights import (
+    build_supplemental_light_status,
+    evaluate_supplemental_schedule,
+)
 from .grow_light_ac_infinity import (
     ac_infinity_light_lit,
     ac_infinity_schedule_matches,
@@ -102,6 +108,9 @@ class GrowLightCoordinator:
         self._remove_tick: Callable[[], None] | None = None
         self._remove_reconcile: Callable[[], None] | None = None
         self._remove_leak_check: Callable[[], None] | None = None
+        self._remove_supplemental_boundary: Callable[[], None] | None = None
+        self._remove_supplemental_state_listener: Callable[[], None] | None = None
+        self._remove_override_listener: Callable[[], None] | None = None
         self._last_dark_warn: date | None = None
         # Light Leak Guard state. It lives on the instance rather than being
         # reset by unload(), so a config edit mid-episode does not alert twice.
@@ -138,9 +147,18 @@ class GrowLightCoordinator:
         # The guard also watches rooms whose lights GSM does not drive, so it
         # starts before the controller's own gate.
         await self._start_light_leak_guard(env)
+
+        # Supplemental lights run on their own windows against the main cycle,
+        # even when the main grow light controller is disabled (e.g. hardware timer).
+        await self._setup_supplemental_lights(env)
+
         if not env.growlight_config.enabled:
+            if env.supplemental_lights:
+                self._schedule_next_reconcile()
             return
         if not self._has_growlight_actuators:
+            if env.supplemental_lights:
+                self._schedule_next_reconcile()
             return
 
         # Detect a stale-on light from downtime BEFORE we act on it below (the
@@ -501,6 +519,8 @@ class GrowLightCoordinator:
                 and env.growlight_ac_infinity_devices
             ):
                 await self._reconcile_ac_infinity_schedules(env)
+            if env is not None and env.supplemental_lights:
+                await self.async_reconcile_supplemental_lights()
         except Exception:
             _LOGGER.exception(
                 "Error reconciling grow light schedule for %s", self.growspace_id
@@ -511,6 +531,122 @@ class GrowLightCoordinator:
         if self._remove_reconcile is not None:
             self._remove_reconcile()
             self._remove_reconcile = None
+
+    # --- Supplemental Lights (v1) -----------------------------------------
+
+    async def _setup_supplemental_lights(self, env: EnvironmentConfig) -> None:
+        """Subscribe to output state/override events and reconcile supplemental lights."""
+        if not env.supplemental_lights:
+            return
+        entity_ids = [s.entity_id for s in env.supplemental_lights if s.entity_id]
+        if entity_ids:
+            self._remove_supplemental_state_listener = async_track_state_change_event(
+                self.hass, entity_ids, self._on_supplemental_state_change
+            )
+        self._remove_override_listener = (
+            self.main_coordinator.irrigation_safety.add_override_listener(
+                self._on_override_changed
+            )
+        )
+        await self.async_reconcile_supplemental_lights()
+
+    @callback
+    def _on_override_changed(self, growspace_id: str, subsystem: Subsystem) -> None:
+        """Reconcile supplemental lights immediately when a Lights override clears/expires."""
+        if growspace_id != self.growspace_id or subsystem is not Subsystem.LIGHTS:
+            return
+        if self.main_coordinator.irrigation_safety.commands_allowed(
+            self.growspace_id, Subsystem.LIGHTS
+        ):
+            self.config_entry.async_create_background_task(
+                self.hass,
+                self.async_reconcile_supplemental_lights(),
+                "supplemental_lights_override_reconcile",
+            )
+
+    @callback
+    def _on_supplemental_state_change(
+        self, event: Event[EventStateChangedData]
+    ) -> None:
+        """Reconcile on device reconnection or unexpected state while under control."""
+        old_state = event.data.get("old_state")
+        new_state = event.data.get("new_state")
+        if new_state is None or new_state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return
+        reconnected = old_state is None or old_state.state in (
+            STATE_UNAVAILABLE,
+            STATE_UNKNOWN,
+        )
+        if reconnected or new_state.state == STATE_ON:
+            self.config_entry.async_create_background_task(
+                self.hass,
+                self.async_reconcile_supplemental_lights(),
+                "supplemental_lights_state_reconcile",
+            )
+
+    @callback
+    def _on_supplemental_boundary(self, _now: datetime) -> None:
+        """Handle a scheduled supplemental window boundary."""
+        self._remove_supplemental_boundary = None
+        self.config_entry.async_create_background_task(
+            self.hass,
+            self.async_reconcile_supplemental_lights(),
+            "supplemental_lights_boundary_reconcile",
+        )
+
+    def _cancel_supplemental_boundary(self) -> None:
+        if self._remove_supplemental_boundary is not None:
+            self._remove_supplemental_boundary()
+            self._remove_supplemental_boundary = None
+
+    async def async_reconcile_supplemental_lights(self) -> None:
+        """Reconcile every enabled supplemental light and schedule the next boundary."""
+        self._cancel_supplemental_boundary()
+        env = self._env_config
+        gs = self._growspace
+        if env is None or gs is None or not env.supplemental_lights:
+            return
+
+        now = dt_util.now()
+        photoperiod_hours = self._photoperiod_hours(env)
+        lights_on_time = gs.light_cycle.lights_on_time
+        commands_allowed = self.main_coordinator.irrigation_safety.commands_allowed(
+            self.growspace_id, Subsystem.LIGHTS
+        )
+
+        earliest_boundary: datetime | None = None
+        for light in env.supplemental_lights:
+            if not light.enabled or not light.entity_id:
+                continue
+            evaluation = evaluate_supplemental_schedule(
+                lights_on_time, photoperiod_hours, now, light.windows
+            )
+            if evaluation.next_boundary_at is not None and (
+                earliest_boundary is None
+                or evaluation.next_boundary_at < earliest_boundary
+            ):
+                earliest_boundary = evaluation.next_boundary_at
+
+            if not commands_allowed:
+                continue
+            state = self.hass.states.get(light.entity_id)
+            if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                continue
+            driver = resolve_actuator_driver(self.hass, light.entity_id)
+            if driver is None:
+                continue
+            is_on = driver.is_on()
+            if evaluation.is_active_now and not is_on:
+                await driver.turn_on()
+            elif not evaluation.is_active_now and is_on:
+                await driver.turn_off()
+
+        if earliest_boundary is not None:
+            self._remove_supplemental_boundary = async_track_point_in_utc_time(
+                self.hass,
+                self._on_supplemental_boundary,
+                dt_util.as_utc(earliest_boundary),
+            )
 
     async def async_restart(self) -> None:
         """Restart the controller after a config change."""
@@ -525,4 +661,81 @@ class GrowLightCoordinator:
         if self._remove_leak_check is not None:
             self._remove_leak_check()
             self._remove_leak_check = None
+        if self._remove_supplemental_state_listener is not None:
+            self._remove_supplemental_state_listener()
+            self._remove_supplemental_state_listener = None
+        if self._remove_override_listener is not None:
+            self._remove_override_listener()
+            self._remove_override_listener = None
+        self._cancel_supplemental_boundary()
         self._cancel_reconcile_timer()
+
+
+def build_supplemental_statuses_for_growspace(
+    hass: HomeAssistant,
+    growspace: Growspace,
+    plants: list[Any],
+    irrigation_safety: Any | None = None,
+) -> list[dict[str, Any]]:
+    """Build UI-facing status dictionaries for all supplemental lights on a growspace."""
+    env = growspace.environment_config
+    if not env.supplemental_lights:
+        return []
+
+    now = dt_util.now()
+    photoperiod_hours = resolve_photoperiod_hours(
+        plants, env.veg_day_hours, env.flower_day_hours, now.date()
+    )
+    lights_on_time = growspace.light_cycle.lights_on_time
+    commands_allowed = (
+        irrigation_safety.commands_allowed(growspace.id, Subsystem.LIGHTS)
+        if irrigation_safety is not None
+        else True
+    )
+    override = (
+        irrigation_safety.override_for(growspace.id, Subsystem.LIGHTS)
+        if irrigation_safety is not None
+        else None
+    )
+    override_expires_at = (
+        dt_util.as_local(override.expires_at) if override is not None else None
+    )
+
+    statuses: list[dict[str, Any]] = []
+    for light in env.supplemental_lights:
+        evaluation = evaluate_supplemental_schedule(
+            lights_on_time, photoperiod_hours, now, light.windows
+        )
+        state = hass.states.get(light.entity_id) if light.entity_id else None
+        reported_state = state.state if state is not None else "missing"
+        available = state is not None and state.state not in (
+            STATE_UNAVAILABLE,
+            STATE_UNKNOWN,
+        )
+        statuses.append(
+            build_supplemental_light_status(
+                light,
+                evaluation,
+                reported_state=reported_state,
+                available=available,
+                commands_allowed=commands_allowed,
+                override_expires_at=override_expires_at,
+                lights_on_time=lights_on_time,
+                photoperiod_hours=photoperiod_hours,
+            )
+        )
+    return statuses
+
+
+def build_growspace_supplemental_statuses(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    growspace: Growspace,
+) -> list[dict[str, Any]]:
+    """Build UI-facing status dictionaries for all supplemental lights on a growspace."""
+    if not growspace.environment_config.supplemental_lights:
+        return []
+    plants = coordinator.services.growspaces.get_growspace_plants(growspace.id)
+    return build_supplemental_statuses_for_growspace(
+        hass, growspace, plants, coordinator.irrigation_safety
+    )
