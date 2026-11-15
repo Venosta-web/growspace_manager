@@ -754,6 +754,9 @@
       "vpd": {
         "name": "VPD"
       },
+      "growspace_mapping": {
+        "name": "{growspace} Mapping"
+      },
       "growspaces_list": {
         "name": "Growspaces List"
       },

@@ -21,7 +21,7 @@ from custom_components.growspace_manager.tank_depletion_predictor import (
     TankDepletionPredictor,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -31,6 +31,7 @@ from .drying import DryingMoistureSensor, DryingWeightSensor
 from .environment import AirExchangeSensor, DLISensor, ECTargetSensor
 from .grow_run import ActiveRunSensor
 from .irrigation_controller import IrrigationControllerSensor
+from .mapping import GrowspaceMappingSensor
 from .overview import GrowspaceListSensor, GrowspaceOverviewSensor
 from .plant import PlantEntity
 from .reliability import GrowspaceReliabilitySensor
@@ -156,6 +157,25 @@ async def async_setup_entry(
             len(initial_entities),
         )
 
+    mapping_entities: dict[str, GrowspaceMappingSensor] = {}
+
+    @callback
+    def _sync_mapping_entities() -> None:
+        """Keep one mapping entity per configured growspace."""
+        growspaces = coordinator.growspaces
+        for growspace_id, growspace in growspaces.items():
+            if growspace_id not in mapping_entities:
+                mapping = GrowspaceMappingSensor(coordinator, growspace)
+                mapping_entities[growspace_id] = mapping
+                async_add_entities([mapping])
+
+        for growspace_id in mapping_entities.keys() - growspaces.keys():
+            mapping = mapping_entities.pop(growspace_id)
+            if mapping.registry_entry:
+                er.async_get(hass).async_remove(mapping.registry_entry.entity_id)
+
+    _sync_mapping_entities()
+
     global_entities = []
     global_settings = config_entry.options.get("global_settings", {})
     if global_settings:
@@ -207,6 +227,7 @@ async def async_setup_entry(
                 calculated_subarea_vpd_ids,
                 crop_steering_ids,
             )
+            _sync_mapping_entities()
             await _update_plant_entities(
                 hass,
                 coordinator,

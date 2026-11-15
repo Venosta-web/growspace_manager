@@ -53,11 +53,12 @@ from custom_components.growspace_manager.services.context import (
     BaseService,
     ServiceContext,
 )
+from custom_components.growspace_manager.utils import default_calculated_vpd_entity_id
 from custom_components.growspace_manager.view_model_builder import ViewModelBuilder
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr, entity_registry as er
-from homeassistant.util import dt as dt_util, slugify
+from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.data_access.growspace_repository import (
@@ -666,9 +667,9 @@ class GrowspaceManager(BaseService):
                     and hums[i]
                     and (vpd_entry is None or "calculated_vpd" in vpd_entry)
                 ):
-                    suffix = f" {i + 1}" if num_pairs > 1 else ""
-                    calc_name = f"{growspace.name} Calculated VPD{suffix}"
-                    expected_id = f"sensor.{slugify(calc_name)}"
+                    expected_id = default_calculated_vpd_entity_id(
+                        growspace.name, i if num_pairs > 1 else None
+                    )
 
                     if vpds[i] != expected_id:
                         vpds[i] = expected_id

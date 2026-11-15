@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from homeassistant.util import slugify
 
 from .const import DOMAIN
 from .domain.date_logic import (
@@ -332,6 +333,14 @@ def read_environment_vpd(
 # =========================================================================
 # UNIQUE ID GENERATORS
 # =========================================================================
+
+
+def default_calculated_vpd_entity_id(
+    growspace_name: str, index: int | None = None
+) -> str:
+    """Return the default entity ID used in calculated VPD configuration."""
+    suffix = f" {index + 1}" if index is not None else ""
+    return f"sensor.{slugify(f'{growspace_name} Calculated VPD{suffix}')}"
 
 
 def generate_vpd_sensor_unique_id(growspace_id: str, index: int | None = None) -> str:
