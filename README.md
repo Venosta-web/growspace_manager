@@ -351,6 +351,14 @@ All database, plant tracking, environmental setup, and scheduling operations are
 
 For a complete description of all services, parameters, and example payloads, see the [Exhaustive Service API Reference](docs/services.md).
 
+### Growspace Mapping sensors
+
+Home Assistant creates one mapping sensor per configured growspace. To discover them, look for sensor states with the `growspace_mapping` attribute set to `true` and use `growspace_id` as the stable identifier. The default entity ID is `sensor.<growspace_name>_mapping`. Each sensor also exposes the growspace `name`, `type`, and actual `overview_entity_id`. The display name is limited to 255 characters.
+
+ESPHome and other consumers can subscribe directly to the flat `temperature_entity_id`, `humidity_entity_id`, `vpd_entity_id`, `exhaust_entity_id`, `circulation_entity_id`, `humidifier_entity_id`, and `dehumidifier_entity_id` attributes. Each contains the primary configured entity ID or `null` when the reference is missing, invalid, or exceeds Home Assistant's entity ID length limit. Actuator lists use their first entry, with the first AC Infinity port's mode entity as a fallback. When Home Assistant calculates VPD for the growspace, the mapping uses the calculated sensor's registered ID. Multiple growspaces can point to the same equipment.
+
+The sensor state is the current granular stage. The flat attributes include `granular_stage`, `is_day`, `veg_week`, `flower_week`, `vpd_target_min`, `vpd_target_max`, `vpd_danger_min`, and `vpd_danger_max`. Targets are in kPa and are `null` when no stage target is available.
+
 ---
 
 ## Troubleshooting & Diagnostics

@@ -90,7 +90,7 @@ async def test_golden_store_upgrades_and_keeps_every_entity(
     enable_custom_integrations: None,
     recorder_mock: None,
 ) -> None:
-    """Valid v2 document, moved fields intact, same unique_ids, an exact copy."""
+    """Check moved fields, legacy and mapping entities, and an exact store copy."""
     golden_config = _golden(STORAGE_KEY_CONFIG)
     hass_storage[STORAGE_KEY_CONFIG] = copy.deepcopy(golden_config)
     hass_storage[STORAGE_KEY_PLANTS] = _golden(STORAGE_KEY_PLANTS)
@@ -138,7 +138,12 @@ async def test_golden_store_upgrades_and_keeps_every_entity(
         for entry in er.async_get(hass).entities.values()
         if entry.platform == DOMAIN
     )
-    assert unique_ids == json.loads((FIXTURES / "v1_2_3_unique_ids.json").read_text())
+    legacy_unique_ids = json.loads((FIXTURES / "v1_2_3_unique_ids.json").read_text())
+    mapping_unique_ids = [
+        f"{DOMAIN}_{growspace_id}_mapping"
+        for growspace_id in mock_config_entry.runtime_data.growspaces
+    ]
+    assert unique_ids == sorted(legacy_unique_ids + mapping_unique_ids)
     assert not [
         issue_id
         for (domain, issue_id) in ir.async_get(hass).issues
