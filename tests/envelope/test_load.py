@@ -11,10 +11,10 @@ from collections import Counter
 from datetime import datetime, timedelta
 import logging
 import math
+import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from freezegun import api as freezegun_api
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
@@ -290,11 +290,13 @@ async def test_seven_days_at_full_envelope(
                 hass.states.async_set(entity, str(40 if minute % 15 == 0 else 42))
             for entity in zone.pore_ec_sensors:
                 hass.states.async_set(entity, "1.5")
-        began = freezegun_api.real_perf_counter()
+        # Thread CPU time, not wall time: the budget is the loop's own cost, and
+        # a shared runner's wall clock also counts time spent descheduled.
+        began = time.thread_time()
         for runtime in runtimes:
             await runtime._async_sensor_tick()
             await runtime._update_loop(instant)
-        samples.append((freezegun_api.real_perf_counter() - began) * 1000)
+        samples.append((time.thread_time() - began) * 1000)
         await asyncio.gather(
             *(s._supply_task for s in supplies if s._supply_task is not None)
         )
