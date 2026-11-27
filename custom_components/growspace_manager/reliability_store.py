@@ -146,6 +146,11 @@ class ReliabilityStore:
         self._key = f"growspace_manager.reliability_{entry_id}"
         self._store: Store[dict[str, Any]] = Store(hass, 1, self._key)
         self._data: dict[str, dict[str, Any]] = {}
+        # Per growspace: the minute buckets the last prune left, and the
+        # cutoff it used. A shot records dozens of counters in one minute, and
+        # rebuilding a day of buckets for each is the minute tick's cost
+        # (ADR-0060).
+        self._pruned: dict[str, tuple[dict[str, Any], str]] = {}
         self.unreadable = False
 
     async def async_load(self) -> None:
@@ -208,6 +213,27 @@ class ReliabilityStore:
         """Queue a write; Home Assistant never pushes an earlier one back."""
         self._store.async_delay_save(lambda: self._data, delay)
 
+    def _prune_once(
+        self, growspace_id: str, row: dict[str, Any], now: datetime
+    ) -> None:
+        """Prune ``row`` unless it was already pruned against this cutoff.
+
+        Every bucket written since that prune is its own call's minute, which
+        is never older than the cutoff, so pruning again would drop nothing.
+        The buckets are compared by identity: a reloaded or replaced row is
+        pruned afresh.
+        """
+        minute_limit = (now - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M")
+        previous = self._pruned.get(growspace_id)
+        if (
+            previous is not None
+            and previous[0] is row.get("minutes")
+            and previous[1] == minute_limit
+        ):
+            return
+        self._prune(row, now)
+        self._pruned[growspace_id] = (row["minutes"], minute_limit)
+
     @staticmethod
     def _prune(row: dict[str, Any], now: datetime) -> None:
         minute_limit = (now - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M")
@@ -258,7 +284,7 @@ class ReliabilityStore:
         row = self._data.setdefault(growspace_id, _empty_row())
         # Plain strings: an enum member as a key would reach the export as one.
         counter = self._bounded(row.setdefault("lifetime", {}), str(counter))
-        self._prune(row, now)
+        self._prune_once(growspace_id, row, now)
         for section, bucket in (
             ("lifetime", None),
             ("minutes", now.strftime("%Y-%m-%dT%H:%M")),

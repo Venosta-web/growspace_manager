@@ -334,10 +334,12 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
             self.growspace.environment_config, plants, now().date()
         )
 
-    def _boundaries(self, day: date | None = None) -> SteeringPhaseBoundaries:
+    def _boundaries(
+        self, day: date | None = None, strategy: IrrigationStrategy | None = None
+    ) -> SteeringPhaseBoundaries:
         """Resolve this zone’s current light window."""
         return phase_boundary_times(
-            self._strategy(),
+            strategy or self._strategy(),
             self._day_hours(),
             day or now().date(),
             now().tzinfo,
@@ -362,14 +364,15 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
             if window
             else current.date()
         )
-        boundaries = self._boundaries(window_day)
+        strategy = self._strategy()
+        boundaries = self._boundaries(window_day, strategy)
         window, qualifies = watch_reference_window(
             window,
             at=current,
             boundaries=boundaries,
             own_control_valid=reading.value is not None
             and reading.substitute_for is None,
-            enabled=self._strategy().enabled,
+            enabled=strategy.enabled,
             delay=timedelta(minutes=self._config().sensor_alert_delay_minutes),
         )
         attempts = self._supply._deliveries.attempts

@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import replace
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 import json
 import logging
 from os.path import exists
@@ -43,6 +43,8 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .domain.delivery_attempt import (
+    RETENTION,
+    ROW_LIMIT,
     DeliveryAttempt,
     DispensedVolume,
     attempts_between,
@@ -82,9 +84,18 @@ class GrowspaceDeliveries:
         self.growspace_id = growspace_id
         self.attempts: list[DeliveryAttempt] = []
         self._encoded_rows: dict[str, tuple[DeliveryAttempt, bytes]] = {}
+        # Each row's last_seen_at, reused while the row is the same object:
+        # every write-through prunes a week of rows (ADR-0060).
+        self._last_seen: dict[str, tuple[DeliveryAttempt, datetime]] = {}
         self._compression_prefix: list[DeliveryAttempt] = []
         self._compressor = zlib.compressobj()
         self._compressed_prefix = self._compressor.compress(b"[")
+        # Length of the uncompressed bytes the prefix stream stands for.
+        self._prefix_raw_length = 1
+        # Rows the last prune kept, the day it ran, and the earliest moment
+        # one of them could age out. Until then an unchanged prefix needs no
+        # second look: only rows added or replaced since are checked.
+        self._retained: tuple[list[DeliveryAttempt], date, datetime] | None = None
         self._dispensed_cache: (
             tuple[date, tuple[DeliveryAttempt, ...], DispensedVolume] | None
         ) = None
@@ -198,30 +209,45 @@ class GrowspaceDeliveries:
             raise ValueError("compressed attempts are oversized or incomplete")
         return json.loads(raw)
 
+    def _encoded(self, attempt: DeliveryAttempt) -> bytes:
+        """Encode one row, reusing the bytes of an unchanged attempt."""
+        previous = self._encoded_rows.get(attempt.attempt_id)
+        if previous is not None and previous[0] is attempt:
+            return previous[1]
+        encoded = json.dumps(attempt.as_dict(), separators=(",", ":")).encode()
+        self._encoded_rows[attempt.attempt_id] = (attempt, encoded)
+        return encoded
+
     def _document(self) -> dict[str, Any]:
         """Write the same lossless rows, compacting a larger week's history.
 
         Immutable attempts let unchanged rows reuse their encoding. Old v1
         documents remain readable; the compressed payload has its own explicit
         key and is validated by the same decoder after expansion.
+
+        While the compressed prefix still matches, only the rows after it are
+        encoded: a write-through before every shot must not walk the week
+        (ADR-0060).
         """
-        cache = {}
-        rows = []
-        for attempt in self.attempts:
-            previous = self._encoded_rows.get(attempt.attempt_id)
-            encoded = (
-                previous[1]
-                if previous is not None and previous[0] is attempt
-                else json.dumps(attempt.as_dict(), separators=(",", ":")).encode()
-            )
-            cache[attempt.attempt_id] = (attempt, encoded)
-            rows.append(encoded)
-        self._encoded_rows = cache
-        raw = b"[" + b",".join(rows) + b"]"
         document = {
             "growspace_id": self.growspace_id,
             "calibration": self.calibration.as_dict(),
         }
+        length = len(self._compression_prefix)
+        if length and self.attempts[:length] == self._compression_prefix:
+            tail = [self._encoded(attempt) for attempt in self.attempts[length:]]
+            raw_length = self._prefix_raw_length + sum(len(row) + 1 for row in tail) + 1
+            if raw_length > COMPACT_AFTER_BYTES:
+                document["attempts_zlib"] = base64.b64encode(
+                    self._finish_compressed(tail, length)
+                ).decode("ascii")
+                return document
+        rows = [self._encoded(attempt) for attempt in self.attempts]
+        live = {attempt.attempt_id for attempt in self.attempts}
+        self._encoded_rows = {
+            key: value for key, value in self._encoded_rows.items() if key in live
+        }
+        raw = b"[" + b",".join(rows) + b"]"
         if len(raw) > COMPACT_AFTER_BYTES:
             document["attempts_zlib"] = base64.b64encode(
                 self._compact_rows(rows)
@@ -242,26 +268,94 @@ class GrowspaceDeliveries:
             self._compression_prefix = []
             self._compressor = zlib.compressobj()
             self._compressed_prefix = self._compressor.compress(b"[")
+            self._prefix_raw_length = 1
             length = 0
-        while length < len(self.attempts) and not self.attempts[length].is_open:
-            part = (b"," if length else b"") + rows[length]
+        return self._finish_compressed(rows[length:], length)
+
+    def _finish_compressed(self, tail: list[bytes], length: int) -> bytes:
+        """Extend the closed prefix over ``tail``, then finalize a copy."""
+        index = 0
+        while index < len(tail) and not self.attempts[length].is_open:
+            part = (b"," if length else b"") + tail[index]
             self._compressed_prefix += self._compressor.compress(part)
+            self._prefix_raw_length += len(part)
             self._compression_prefix.append(self.attempts[length])
             length += 1
+            index += 1
         compressor = self._compressor.copy()
-        tail = b",".join(rows[length:])
-        if tail and length:
-            tail = b"," + tail
+        rest = b",".join(tail[index:])
+        if rest and length:
+            rest = b"," + rest
         return (
             self._compressed_prefix
-            + compressor.compress(tail + b"]")
+            + compressor.compress(rest + b"]")
             + compressor.flush()
         )
 
     def _prune(self) -> None:
+        now = dt_util.utcnow()
+        today = dt_util.now().date()
+        if self._retained is not None:
+            kept, day, expires = self._retained
+            length = len(kept)
+            if (
+                day == today
+                and now < expires
+                and len(self.attempts) <= ROW_LIMIT
+                and self.attempts[:length] == kept
+            ):
+                horizon = now - RETENTION
+                tail = self.attempts[length:]
+                if all(
+                    attempt.charge_date == today or self._seen(attempt) >= horizon
+                    for attempt in tail
+                ):
+                    # Nothing ages out; extend the verified prefix.
+                    self._retained = (
+                        list(self.attempts),
+                        today,
+                        min(
+                            [expires]
+                            + [
+                                self._seen(attempt) + RETENTION
+                                for attempt in tail
+                                if attempt.charge_date != today
+                            ]
+                        ),
+                    )
+                    return
+        cache: dict[str, tuple[DeliveryAttempt, datetime]] = {}
+
+        def last_seen(attempt: DeliveryAttempt) -> datetime:
+            seen = self._seen(attempt)
+            cache[attempt.attempt_id] = (attempt, seen)
+            return seen
+
         self.attempts = retained(
-            self.attempts, now=dt_util.utcnow(), today=dt_util.now().date()
+            self.attempts, now=now, today=today, last_seen=last_seen
         )
+        self._last_seen = cache
+        self._retained = (
+            list(self.attempts),
+            today,
+            min(
+                (
+                    self._seen(attempt) + RETENTION
+                    for attempt in self.attempts
+                    if attempt.charge_date != today
+                ),
+                default=datetime.max.replace(tzinfo=UTC),
+            ),
+        )
+
+    def _seen(self, attempt: DeliveryAttempt) -> datetime:
+        """Return ``last_seen_at``, cached while the row is the same object."""
+        previous = self._last_seen.get(attempt.attempt_id)
+        if previous is not None and previous[0] is attempt:
+            return previous[1]
+        seen = attempt.last_seen_at
+        self._last_seen[attempt.attempt_id] = (attempt, seen)
+        return seen
 
     async def async_request(self, attempt: DeliveryAttempt) -> None:
         """Record an attempt the gate passed, on disk before its ON command.
