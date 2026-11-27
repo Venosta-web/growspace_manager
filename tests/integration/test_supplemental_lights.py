@@ -17,6 +17,7 @@ from custom_components.growspace_manager.domain.environment_patch import (
     EnvironmentPatchError,
 )
 from custom_components.growspace_manager.domain.manual_override import Subsystem
+from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.models import GrowLightConfig, Growspace
 from custom_components.growspace_manager.services.environment_patch_commit import (
     async_commit_environment_patch,
@@ -27,7 +28,7 @@ from custom_components.growspace_manager.supplemental_light_coordinator import (
 from custom_components.growspace_manager.websocket import async_register_websocket_api
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 import homeassistant.util.dt as dt_util
 from tests.common import MockConfigEntry
 
@@ -474,3 +475,122 @@ async def test_growspace_deletion_keeps_an_unreachable_assignment(
         assert result["success"]
     await coordinator.services.growspaces.remove_growspace(growspace.id)
     assert growspace.id not in coordinator.growspaces
+
+
+async def test_requests_before_the_controller_loads_are_refused(
+    hass: HomeAssistant, hass_ws_client: Any, tent: Any
+) -> None:
+    """Neither the editor nor growspace removal acts without a loaded controller."""
+    _, coordinator, growspace = tent
+    async with await hass_ws_client(hass) as client:
+        assert (await _save(client))["success"]
+        coordinator._subsystem_manager.environment_controllers[growspace.id] = []
+        result = await _command(client, "get_supplemental_lights")
+        assert "still loading" in result["error"]["message"]
+        result = await _command(client, "save_supplemental_light")
+        assert "Choose a Supplemental Light" in result["error"]["message"]
+    with pytest.raises(ServiceValidationError, match="still loading"):
+        await coordinator.services.growspaces.remove_growspace(growspace.id)
+    assert growspace.id in coordinator.growspaces
+
+
+async def test_status_names_why_an_enabled_light_is_idle(
+    hass: HomeAssistant, hass_ws_client: Any, tent: Any, freezer: FrozenDateTimeFactory
+) -> None:
+    """Each hold reports its own reason instead of a generic idle state."""
+    _, coordinator, growspace = tent
+    env = growspace.environment_config
+    controller = coordinator.services.growspaces.get_supplemental_light_controller(
+        growspace.id
+    )
+
+    def reason() -> str:
+        return controller.status()["lights"][0]["reason"]
+
+    async with await hass_ws_client(hass) as client:
+        freezer.move_to(datetime(2026, 1, 12, 8, 30, tzinfo=dt_util.DEFAULT_TIME_ZONE))
+        assert (await _save(client))["success"]
+    freezer.move_to(datetime(2026, 1, 12, 13, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE))
+    assert reason() == "Outside the scheduled windows."
+
+    hass.states.async_set(ENTITY, "unavailable")
+    assert reason() == "Output is unavailable."
+    hass.states.async_set(ENTITY, "off")
+
+    env.veg_day_hours = 0
+    assert controller.status()["cycle"] is None
+    env.veg_day_hours = 18
+    env.growlight_entities = []
+    assert controller.status()["cycle"] is None
+    env.growlight_entities = ["light.main"]
+
+    await coordinator.irrigation_safety.async_set_control(
+        growspace.id, "automation", False, None
+    )
+    assert reason() == "Growspace automation is stopped."
+
+
+async def test_a_failed_command_is_reported_until_one_succeeds(
+    hass: HomeAssistant,
+    hass_ws_client: Any,
+    tent: Any,
+    freezer: FrozenDateTimeFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An output without a usable driver keeps its error on the status."""
+    from custom_components.growspace_manager import supplemental_light_coordinator
+
+    _, coordinator, growspace = tent
+    async with await hass_ws_client(hass) as client:
+        freezer.move_to(datetime(2026, 1, 12, 8, 30, tzinfo=dt_util.DEFAULT_TIME_ZONE))
+        assert (await _save(client))["success"]
+    controller = coordinator.services.growspaces.get_supplemental_light_controller(
+        growspace.id
+    )
+    monkeypatch.setattr(
+        supplemental_light_coordinator,
+        "resolve_actuator_driver",
+        lambda *_args, **_kwargs: None,
+    )
+    freezer.move_to(datetime(2026, 1, 12, 13, 0, tzinfo=dt_util.DEFAULT_TIME_ZONE))
+    await controller.async_reconcile()
+    assert hass.states.get(ENTITY).state == "on"
+    assert controller.status()["lights"][0]["reason"] == (
+        f"Could not switch {ENTITY} off: "
+        f"{ENTITY} is not a supported Supplemental Light output."
+    )
+
+
+async def test_saves_against_missing_records_are_refused(
+    hass: HomeAssistant, hass_ws_client: Any, tent: Any
+) -> None:
+    """A vanished growspace, a vanished light and a missing cycle each refuse."""
+    _, coordinator, growspace = tent
+    with pytest.raises(GrowspaceNotFoundError):
+        await SupplementalLightCoordinator(coordinator, "missing").async_save(
+            None, None, False
+        )
+    async with await hass_ws_client(hass) as client:
+        result = await _save(client, original_entity="switch.ghost")
+        assert "no longer exists" in result["error"]["message"]
+        growspace.environment_config.growlight_entities = []
+        result = await _save(client)
+        assert "valid managed main-light cycle" in result["error"]["message"]
+    assert not growspace.supplemental_lights
+
+
+async def test_keeping_an_existing_main_light_is_not_a_new_conflict(
+    hass: HomeAssistant, tent: Any
+) -> None:
+    """Only outputs added by the patch are checked against other assignments."""
+    _, coordinator, growspace = tent
+    await async_commit_environment_patch(
+        hass,
+        coordinator,
+        growspace,
+        EnvironmentPatch(values={"growlight_entities": ["light.main", "light.extra"]}),
+    )
+    assert growspace.environment_config.growlight_entities == [
+        "light.main",
+        "light.extra",
+    ]
