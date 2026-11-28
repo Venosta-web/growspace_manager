@@ -30,6 +30,7 @@ from __future__ import annotations
 from collections import Counter
 import copy
 from dataclasses import fields, replace
+from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from custom_components.growspace_manager.models.irrigation import (
@@ -95,9 +96,26 @@ def zone_of(growspace: Growspace, zone_id: str | None = None) -> IrrigationZone:
     raise KeyError(zone_id)
 
 
+# Settings that are shared rather than copied: they cannot be mutated, so a
+# detached view gains nothing by copying them. The minute tick builds these
+# views several times per zone, so the check is a set lookup (ADR-0060).
+_IMMUTABLE_SETTINGS: frozenset[type] = frozenset({str, int, float, bool, type(None)})
+
+
+def _detached(source: Any, names: tuple[str, ...]) -> dict[str, Any]:
+    """Read ``names`` off ``source``, copying only the mutable values."""
+    values = {}
+    for name in names:
+        value = getattr(source, name)
+        values[name] = (
+            value if type(value) in _IMMUTABLE_SETTINGS else _copy_setting(value)
+        )
+    return values
+
+
 def _copy_setting(value: Any) -> Any:
     """Detach mutable settings without recursing through primitive values."""
-    if type(value) in (str, int, float, bool, type(None)):
+    if type(value) in _IMMUTABLE_SETTINGS or isinstance(value, Enum):
         return value
     if type(value) is SubstrateProfile:
         return replace(value)
@@ -113,13 +131,8 @@ def effective_config(
     :func:`apply_effective_irrigation`.
     """
     zone = zone or growspace.default_zone
-    values = {
-        name: _copy_setting(getattr(growspace.irrigation_config, name))
-        for name in _GROWSPACE_CONFIG_FIELDS
-    }
-    values.update(
-        {name: _copy_setting(getattr(zone, name)) for name in ZONE_CONFIG_FIELDS}
-    )
+    values = _detached(growspace.irrigation_config, _GROWSPACE_CONFIG_FIELDS)
+    values.update(_detached(zone, ZONE_CONFIG_FIELDS))
     return IrrigationConfig(**values)
 
 
@@ -131,9 +144,7 @@ def effective_strategy(
     A detached copy, as :func:`effective_config` is.
     """
     zone = zone or growspace.default_zone
-    values = {
-        name: _copy_setting(getattr(zone.strategy, name)) for name in _STEERING_FIELDS
-    }
+    values = _detached(zone.strategy, _STEERING_FIELDS)
     values.update(
         {name: getattr(growspace.light_cycle, name) for name in LIGHT_CYCLE_FIELDS}
     )

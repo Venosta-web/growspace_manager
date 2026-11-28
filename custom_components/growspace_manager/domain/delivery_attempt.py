@@ -27,7 +27,7 @@ Assistant. Metered evidence is the rest of ADR-0055 and is not recorded yet.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from enum import StrEnum
@@ -719,26 +719,35 @@ def with_suppression(
     return rows
 
 
+def _last_seen_at(attempt: DeliveryAttempt) -> datetime:
+    return attempt.last_seen_at
+
+
 def retained(
-    attempts: Iterable[DeliveryAttempt], *, now: datetime, today: date
+    attempts: Iterable[DeliveryAttempt],
+    *,
+    now: datetime,
+    today: date,
+    last_seen: Callable[[DeliveryAttempt], datetime] = _last_seen_at,
 ) -> list[DeliveryAttempt]:
     """Drop attempts past retention, then the oldest over the row limit.
 
     Neither rule removes an attempt charged today: the caps are derived from
-    them, so evicting one would hand the allowance back.
+    them, so evicting one would hand the allowance back. ``last_seen`` lets a
+    caller that keeps the rows reuse each one's :attr:`last_seen_at`.
     """
     horizon = now - RETENTION
     kept = [
         attempt
         for attempt in attempts
-        if attempt.charge_date == today or attempt.last_seen_at >= horizon
+        if attempt.charge_date == today or last_seen(attempt) >= horizon
     ]
     excess = len(kept) - ROW_LIMIT
     if excess <= 0:
         return kept
     evictable = sorted(
         (attempt for attempt in kept if attempt.charge_date != today),
-        key=lambda attempt: attempt.last_seen_at,
+        key=last_seen,
     )
     evicted = {attempt.attempt_id for attempt in evictable[:excess]}
     return [attempt for attempt in kept if attempt.attempt_id not in evicted]

@@ -277,6 +277,7 @@ def _reliability_for(coordinator: IrrigationCoordinator) -> ReliabilityStore:
     reliability._hass = coordinator.hass
     reliability._entry_id = ENTRY_ID
     reliability._data = {}
+    reliability._pruned = {}
     reliability.unreadable = False
     reliability._store = MagicMock()
     coordinator._main_coordinator.reliability = reliability

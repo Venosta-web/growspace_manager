@@ -148,3 +148,77 @@ def test_dispensed_cache_tracks_every_public_list_edit_and_midnight(freezer):
     deliveries.attempts.clear()
     assert deliveries.dispensed().cycles == 0
     assert dt_util.now().date().isoformat() == "2026-06-16"
+
+
+def test_prune_reuses_a_verified_prefix_only_while_it_cannot_age_out(freezer):
+    """Every incremental prune keeps exactly what a full prune would."""
+    from datetime import timedelta
+
+    from custom_components.growspace_manager.domain.delivery_attempt import (
+        RETENTION,
+        retained,
+    )
+    from homeassistant.util import dt as dt_util
+
+    freezer.move_to("2026-06-15T02:00:00+00:00")
+    start = dt_util.utcnow()
+    yesterday = dt_util.now().date() - timedelta(days=1)
+    deliveries = GrowspaceDeliveries("tent")
+    # Each ages out 12, 13 and 14 hours from now, all on today's date.
+    deliveries.attempts = [
+        charged_attempt(
+            "tent",
+            attempt_id=f"old{i}",
+            at=start - RETENTION + timedelta(hours=12 + i),
+            day=yesterday,
+        )
+        for i in range(3)
+    ]
+
+    def prune_matches_full() -> None:
+        expected = retained(
+            list(deliveries.attempts),
+            now=dt_util.utcnow(),
+            today=dt_util.now().date(),
+        )
+        deliveries._prune()
+        assert deliveries.attempts == expected
+
+    prune_matches_full()
+    # Rows added since are checked; the verified prefix is reused.
+    deliveries.attempts.append(charged_attempt("tent", attempt_id="new"))
+    prune_matches_full()
+    assert len(deliveries.attempts) == 4
+    # A row added already past retention forces the full prune.
+    deliveries.attempts.append(
+        charged_attempt(
+            "tent", attempt_id="stale", at=start - RETENTION * 2, day=yesterday
+        )
+    )
+    prune_matches_full()
+    assert "stale" not in {a.attempt_id for a in deliveries.attempts}
+    # So does the moment the earliest verified row reaches the horizon.
+    freezer.move_to(start + timedelta(hours=11))
+    prune_matches_full()
+    assert [a.attempt_id for a in deliveries.attempts][:3] == ["old0", "old1", "old2"]
+    freezer.move_to(start + timedelta(hours=12, minutes=30))
+    prune_matches_full()
+    assert [a.attempt_id for a in deliveries.attempts][:2] == ["old1", "old2"]
+    # And a new local day, which ends the previous day's exemption.
+    freezer.move_to(start + timedelta(days=1))
+    prune_matches_full()
+    assert deliveries._decode(deliveries._document()) == deliveries.attempts
+
+
+def test_document_reencodes_everything_once_the_tail_shrinks_below_compaction():
+    """A matching prefix alone never forces the compressed form."""
+    deliveries = history()
+    deliveries.attempts[0] = deliveries.attempts[0].interrupted(
+        deliveries.attempts[0].on_confirmed_at
+    )
+    assert "attempts_zlib" in deliveries._document()
+    assert deliveries._compression_prefix == deliveries.attempts[:1]
+    deliveries.attempts = deliveries.attempts[:2]
+    document = deliveries._document()
+    assert document["attempts"] == [a.as_dict() for a in deliveries.attempts]
+    assert set(deliveries._encoded_rows) == {a.attempt_id for a in deliveries.attempts}
