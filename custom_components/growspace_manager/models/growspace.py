@@ -42,6 +42,7 @@ from .irrigation import (
     LightCycle,
 )
 from .irrigation_zone import IMPLICIT_ZONE_ID, IrrigationZone
+from .supplemental_light import SupplementalLight
 
 __all__ = [
     "ENVIRONMENT_FIELD_OWNERSHIP",
@@ -763,6 +764,7 @@ class Growspace(BaseModel):
     dehumidifier_config: dict[str, Any] = field(default_factory=dict)
     humidifier_config: dict[str, Any] = field(default_factory=dict)
     light_cycle: LightCycle = field(default_factory=LightCycle)
+    supplemental_lights: list[SupplementalLight] = field(default_factory=list)
     growspace_type: GrowspaceType = field(default=GrowspaceType.FLOWER)
     setup_preset: str | None = None
     # Offered Setup Modules, stamped by a Setup Preset (domain/setup_preset.py).

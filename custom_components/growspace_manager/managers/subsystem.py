@@ -36,6 +36,8 @@ from custom_components.growspace_manager.vwc_irrigation_coordinator import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from ..supplemental_light_coordinator import SupplementalLightCoordinator
+
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
     from custom_components.growspace_manager.models import Growspace
@@ -144,6 +146,7 @@ class SubsystemManager:
                 self.hass, self.entry, growspace_id, self.coordinator, safety
             ),
             GrowLightCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
+            SupplementalLightCoordinator(self.coordinator, growspace_id),
         ]
         for controller in controllers:
             await controller.async_setup()
@@ -217,6 +220,15 @@ class SubsystemManager:
         for c in self.environment_controllers.get(growspace_id, []):
             if isinstance(c, GrowLightCoordinator):
                 return c
+        return None
+
+    def get_supplemental_light_controller(
+        self, growspace_id: str
+    ) -> SupplementalLightCoordinator | None:
+        """Return the supplemental lighting controller for this growspace."""
+        for controller in self.environment_controllers.get(growspace_id, []):
+            if isinstance(controller, SupplementalLightCoordinator):
+                return controller
         return None
 
     def async_cancel_all(self) -> None:

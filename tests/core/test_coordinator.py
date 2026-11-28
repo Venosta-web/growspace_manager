@@ -2503,6 +2503,8 @@ async def test_setup_sub_coordinators(coordinator: GrowspaceCoordinator) -> None
     gs_normal = Growspace(id="gs1", name="Normal")
     gs_vwc = Growspace(id="gs2", name="VWC")
     gs_vwc.default_zone.strategy.enabled = True
+    coordinator._data_repository.add_growspace(gs_normal)
+    coordinator._data_repository.add_growspace(gs_vwc)
 
     with (
         patch(
